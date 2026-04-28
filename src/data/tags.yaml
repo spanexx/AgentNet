@@ -1,0 +1,70 @@
+# AgentNet v0.1 — Seed Tag Catalog
+# Purpose: Version-controlled baseline tags for semantic clustering
+# Source: Decision 7 (Hybrid YAML + Dynamic Discovery)
+
+tags:
+  - name: urgent
+    synonyms:
+      - "asap"
+      - "critical"
+      - "priority"
+      - "emergency"
+      - "immediately"
+
+  - name: user_query
+    synonyms:
+      - "about user"
+      - "user info"
+      - "user details"
+      - "user data"
+      - "user lookup"
+
+  - name: angular
+    synonyms:
+      - "angularjs"
+      - "ng"
+      - "angular framework"
+
+  - name: react
+    synonyms:
+      - "reactjs"
+      - "react framework"
+      - "jsx"
+
+  - name: vue
+    synonyms:
+      - "vuejs"
+      - "vue framework"
+      - "vuejs"
+
+  - name: typescript
+    synonyms:
+      - "ts"
+      - "typed javascript"
+
+  - name: charts
+    synonyms:
+      - "chart"
+      - "graph"
+      - "visualization"
+      - "plot"
+
+  - name: fintech
+    synonyms:
+      - "payment"
+      - "finance"
+      - "banking"
+      - "transaction"
+
+  - name: dashboard
+    synonyms:
+      - "panel"
+      - "control panel"
+      - "admin panel"
+
+  - name: realtime
+    synonyms:
+      - "live"
+      - "real-time"
+      - "streaming"
+      - "instant"

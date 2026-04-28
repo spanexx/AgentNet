@@ -1,0 +1,67 @@
+# AgentNet v0.1 — Seed Intent Catalog
+# Purpose: Version-controlled baseline intents for semantic matching
+# Source: Decision 7 (Hybrid YAML + Dynamic Discovery)
+
+intents:
+  - name: search_user
+    aliases:
+      - "find user"
+      - "get user details"
+      - "look up user"
+      - "search for user"
+      - "find me user"
+
+  - name: list_messages
+    aliases:
+      - "show messages"
+      - "get all messages"
+      - "retrieve messages"
+      - "fetch messages"
+      - "display messages"
+
+  - name: authentication
+    aliases:
+      - "login"
+      - "sign in"
+      - "authenticate"
+      - "auth"
+      - "verify credentials"
+
+  - name: frontend_dashboard
+    aliases:
+      - "dashboard"
+      - "show dashboard"
+      - "open dashboard"
+      - "view dashboard"
+      - "dashboard analytics"
+
+  - name: analytics
+    aliases:
+      - "show chart"
+      - "display metrics"
+      - "view analytics"
+      - "get statistics"
+      - "chart data"
+
+  - name: retrieval
+    aliases:
+      - "search"
+      - "query"
+      - "find"
+      - "look up"
+      - "retrieve information"
+
+  - name: fintech
+    aliases:
+      - "payment"
+      - "finance"
+      - "transaction"
+      - "process payment"
+      - "financial data"
+
+  - name: general
+    aliases:
+      - "help"
+      - "what can you do"
+      - "info"
+      - "about"

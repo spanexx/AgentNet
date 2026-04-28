@@ -1,0 +1,44 @@
+{
+  "name": "agentnet",
+  "version": "0.1.0",
+  "description": "Flexible protocol-based platform for AI agent intelligence sharing",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
+    "logs": "cat logs/requests.jsonl 2>/dev/null || echo 'No logs yet. Make a request first.'",
+    "logs:clear": "rm -f logs/requests.jsonl && echo 'Logs cleared'",
+    "logs:tail": "tail -f logs/requests.jsonl 2>/dev/null || echo 'Waiting for logs...'",
+    "logs:count": "wc -l logs/requests.jsonl 2>/dev/null || echo 'No logs yet'"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.15.2",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "js-yaml": "^4.1.1",
+    "mongoose": "^7.0.0",
+    "openai": "^6.35.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^4.1.5"
+  }
+}
