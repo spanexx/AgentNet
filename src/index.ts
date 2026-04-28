@@ -8,9 +8,13 @@
  * Quick lookup: rg -n "CID:index-" src/index.ts
  */
 
+import { config } from "dotenv";
 import { connectDB } from "./core/db";
 import { loadSeedData } from "./core/seed-loader";
 import { createServer, startServer } from "./server";
+
+config({ path: ".env.local" });
+config();
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 

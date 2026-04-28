@@ -13,7 +13,12 @@
  */
 
 import { Request, Response } from "express";
-import { storeMessage, getAllMessages } from "../services/messageService";
+import {
+  storeMessage,
+  getAllMessages,
+  searchMessages,
+  markMessageUsed,
+} from "../services/messageService";
 
 // CID:msg-ctrl-001 - createMessage
 // Purpose: HTTP POST handler — accept { text } or AgentMessage, return multi-hypothesis SDG response
@@ -85,6 +90,47 @@ export async function getMessages(req: Request, res: Response) {
   }
 }
 
+export async function search(req: Request, res: Response) {
+  try {
+    const { intent, tags, limit, skip } = req.query;
+    const parsedTags =
+      typeof tags === "string"
+        ? tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : Array.isArray(tags)
+          ? tags.map((t) => String(t).trim()).filter(Boolean)
+          : [];
+
+    const result = await searchMessages({
+      intent: intent ? String(intent) : undefined,
+      tags: parsedTags,
+      limit: limit ? parseInt(String(limit)) : 25,
+      skip: skip ? parseInt(String(skip)) : 0
+    });
+
+    res.json({
+      count: result.results.length,
+      total: result.total,
+      limit: result.limit,
+      skip: result.skip,
+      data: result.results
+    });
+  } catch (err) {
+    handleErrors(err, res);
+  }
+}
+
+export async function useMessage(req: Request, res: Response) {
+  try {
+    const result = await markMessageUsed(req.params.id);
+    res.json({
+      status: "success",
+      data: result,
+    });
+  } catch (err) {
+    handleErrors(err, res);
+  }
+}
+
 // CID:msg-ctrl-003 - handleErrors
 // Purpose: Centralized error response formatting (validation, not found, server errors)
 // Uses: Error, Response
@@ -100,6 +146,21 @@ function handleErrors(err: unknown, res: Response): void {
 
   if (error.message.includes("must be")) {
     res.status(400).json({ error: error.message });
+    return;
+  }
+
+  if (error.message.includes("Invalid message ID format")) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+
+  if (error.message.includes("Cast to ObjectId failed")) {
+    res.status(400).json({ error: "invalid message id" });
+    return;
+  }
+
+  if (error.message.includes("not found")) {
+    res.status(404).json({ error: error.message });
     return;
   }
 

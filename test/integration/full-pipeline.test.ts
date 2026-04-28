@@ -1,10 +1,11 @@
 /*
  * Integration Test: Full Pipeline — SDG End-to-End
- * Requires: INTEGRATION_TESTS=true, MongoDB, OPENAI_API_KEY, GOOGLE_API_KEY
+ * Requires: INTEGRATION_TESTS=true, MongoDB, and at least one provider API key
  *
  * Quick lookup: rg -n "CID:pipeline-test-" test/integration/full-pipeline.test.ts
  */
 
+import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import mongoose from "mongoose";
 import { normalizeMessage } from "../../src/core/normalize";
@@ -14,8 +15,7 @@ import { loadSeedData } from "../../src/core/seed-loader";
 const INTEGRATION = process.env.INTEGRATION_TESTS === "true";
 const PROVIDER_INTEGRATION =
   INTEGRATION &&
-  Boolean(process.env.OPENAI_API_KEY) &&
-  Boolean(process.env.GOOGLE_API_KEY);
+  (Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.GOOGLE_API_KEY));
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/agentnet_test";
 
 describe.skipIf(!PROVIDER_INTEGRATION)("Full Pipeline (SDG) — Provider-backed Integration", () => {

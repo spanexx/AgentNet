@@ -15,6 +15,7 @@
 // Uses: Record (TypeScript builtin)
 // Used by: normalizeMessage, routes API handlers
 export type AgentMessage = {
+  agentId?: string;
   type: string;
   intent?: string;
   data?: Record<string, any>;

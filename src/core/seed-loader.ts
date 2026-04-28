@@ -41,9 +41,49 @@ interface TagsYaml {
 // Uses: loadClusters, generateSeedCentroids
 // Used by: src/index.ts on startup
 export async function loadSeedData(): Promise<void> {
-  const dataDir = path.resolve(__dirname, "../data");
+  const dataDir = resolveDataDir();
+  await ensureSemanticClusterIndexes();
   await loadClusters(dataDir);
   await generateSeedCentroids();
+}
+
+function resolveDataDir(): string {
+  const candidates = [
+    path.resolve(__dirname, "../data"),
+    path.resolve(__dirname, "../../src/data"),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      fs.existsSync(path.join(candidate, "intents.yaml")) &&
+      fs.existsSync(path.join(candidate, "tags.yaml"))
+    ) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
+async function ensureSemanticClusterIndexes(): Promise<void> {
+  try {
+    const indexes = await SemanticClusterModel.collection.indexes();
+    const hasLegacyUniqueLabel = indexes.some((idx) => idx.name === "label_1");
+    const hasCompound = indexes.some((idx) => idx.name === "label_1_kind_1");
+
+    if (hasLegacyUniqueLabel && !hasCompound) {
+      await SemanticClusterModel.collection.dropIndex("label_1");
+    }
+
+    if (!hasCompound) {
+      await SemanticClusterModel.collection.createIndex(
+        { label: 1, kind: 1 },
+        { unique: true, name: "label_1_kind_1" }
+      );
+    }
+  } catch (err) {
+    console.warn("[seed-loader] index ensure failed:", err);
+  }
 }
 
 // CID:seed-loader-002 - loadClusters

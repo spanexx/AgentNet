@@ -12,9 +12,12 @@
  * Quick lookup: rg -n "CID:msg-svc-" src/api/services/messageService.ts
  */
 
+import mongoose from "mongoose";
 import { MessageModel } from "../../models/Message";
 import { normalizeMessage, NormalizedMessage } from "../../core/normalize";
 import { AgentMessage } from "../../types/protocol";
+
+const SEARCH_SCORE_WEIGHTS = loadSearchScoreWeights();
 
 // CID:msg-svc-001a - StoreMessageResult
 // Purpose: Shape returned by storeMessage for spec-compliant API response (Decision 8)
@@ -42,11 +45,12 @@ export async function storeMessage(raw: Record<string, unknown>): Promise<StoreM
   const saved = await MessageModel.create({
     original: msg,
     normalized,
+    agentId: msg.agentId ?? "anonymous",
     source: "api"
   });
 
-  // Determine degradation: fewer than 3 providers = degraded
-  const degraded = normalized.providersUsed.length < 3;
+  // Surface the ensemble's runtime degradation signal without penalizing unconfigured providers.
+  const degraded = normalized.degraded;
 
   return {
     id: saved._id.toString(),
@@ -60,7 +64,12 @@ export async function storeMessage(raw: Record<string, unknown>): Promise<StoreM
 /** Convert spec { text } or AgentMessage to AgentMessage */
 function toAgentMessage(raw: Record<string, unknown>): AgentMessage {
   if (raw.text && typeof raw.text === "string") {
-    return { type: "INTENT_REQUEST", intent: raw.text, data: raw.data as Record<string, unknown> | undefined };
+    return {
+      type: "INTENT_REQUEST",
+      agentId: typeof raw.agentId === "string" ? raw.agentId : undefined,
+      intent: raw.text,
+      data: raw.data as Record<string, unknown> | undefined
+    };
   }
   return raw as unknown as AgentMessage;
 }
@@ -110,6 +119,10 @@ function validateMessage(msg: AgentMessage): void {
     throw new Error("Field 'type' must be a string");
   }
 
+  if (msg.agentId && typeof msg.agentId !== "string") {
+    throw new Error("Field 'agentId' must be a string");
+  }
+
   // Intent is optional, but if provided must be string
   if (msg.intent && typeof msg.intent !== "string") {
     throw new Error("Field 'intent' must be a string");
@@ -119,4 +132,190 @@ function validateMessage(msg: AgentMessage): void {
   if (msg.data && typeof msg.data !== "object") {
     throw new Error("Field 'data' must be an object");
   }
+}
+
+export type SearchResultItem = {
+  id: string;
+  summary: string;
+  score: number;
+  usage: number;
+  intent: string;
+  tags: string[];
+  confidence: number;
+  agentId: string;
+  createdAt: string;
+};
+
+export interface UseMessageResult {
+  id: string;
+  usageCount: number;
+  lastUsedAt: string;
+}
+
+interface MessageLeanConfidence {
+  value?: number;
+  density?: number;
+  agreement?: number;
+  distance?: number;
+}
+
+interface MessageLeanHypothesis {
+  intent?: string;
+  tags?: string[];
+  confidence?: MessageLeanConfidence;
+  source?: string;
+}
+
+interface MessageLeanNormalized {
+  hypotheses?: MessageLeanHypothesis[];
+  constraints?: Record<string, unknown>;
+  providersUsed?: string[];
+  degraded?: boolean;
+}
+
+interface MessageLeanOriginal {
+  intent?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+interface MessageLean {
+  _id: { toString(): string } | string;
+  original?: MessageLeanOriginal;
+  normalized?: MessageLeanNormalized;
+  agentId?: string;
+  usageCount?: number;
+  lastUsedAt?: Date | string;
+  createdAt: Date | string;
+  updatedAt?: Date | string;
+}
+
+export async function searchMessages(options?: {
+  intent?: string;
+  tags?: string[];
+  limit?: number;
+  skip?: number;
+}) {
+  const { intent, tags = [], limit = 25, skip = 0 } = options || {};
+  const filter: Record<string, unknown> = {};
+
+  if (intent) filter["normalized.hypotheses.intent"] = intent;
+  if (tags.length > 0) filter["normalized.hypotheses.tags"] = { $all: tags };
+
+  const messages = await MessageModel.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip)
+    .lean<MessageLean[]>();
+
+  const now = Date.now();
+  const scored: SearchResultItem[] = messages.map((m) => {
+    const top = Array.isArray(m.normalized?.hypotheses) ? m.normalized.hypotheses[0] : undefined;
+    const topIntent = typeof top?.intent === "string" ? top.intent : "unknown";
+    const topTags = Array.isArray(top?.tags) ? top.tags.filter((t): t is string => typeof t === "string") : [];
+    const confidence = typeof top?.confidence?.value === "number" ? top.confidence.value : 0;
+
+    const intentScore = intent ? (topIntent === intent ? 1 : 0) : 0.5;
+    const overlappingTags = topTags.filter((t: string) => tags.includes(t)).length;
+    const tagOverlap = tags.length > 0
+      ? Math.min(1, overlappingTags / Math.max(1, tags.length))
+      : 0.5;
+    const ageMs = now - new Date(m.createdAt).getTime();
+    const recency = Math.max(0, 1 - ageMs / (1000 * 60 * 60 * 24 * 30));
+
+    const score =
+      SEARCH_SCORE_WEIGHTS.intent * intentScore +
+      SEARCH_SCORE_WEIGHTS.tags * tagOverlap +
+      SEARCH_SCORE_WEIGHTS.confidence * confidence +
+      SEARCH_SCORE_WEIGHTS.recency * recency;
+
+    const summary =
+      typeof m.original?.intent === "string"
+        ? m.original.intent
+        : typeof m.original?.type === "string"
+          ? m.original.type
+          : JSON.stringify(m.original ?? "").slice(0, 160);
+
+    return {
+      id: String(m._id),
+      summary,
+      score,
+      usage: typeof m.usageCount === "number" ? m.usageCount : 0,
+      intent: topIntent,
+      tags: topTags,
+      confidence,
+      agentId: typeof m.agentId === "string" ? m.agentId : "anonymous",
+      createdAt: new Date(m.createdAt).toISOString(),
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const total = await MessageModel.countDocuments(filter);
+
+  return {
+    results: scored,
+    total,
+    limit,
+    skip
+  };
+}
+
+export async function markMessageUsed(id: string): Promise<UseMessageResult> {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new Error("Invalid message ID format");
+  }
+
+  const updated = await MessageModel.findByIdAndUpdate(
+    id,
+    { $inc: { usageCount: 1 }, $set: { lastUsedAt: new Date() } },
+    { new: true }
+  ).lean<MessageLean | null>();
+
+  if (!updated) {
+    throw new Error("Message not found");
+  }
+
+  return {
+    id: String(updated._id),
+    usageCount: typeof updated.usageCount === "number" ? updated.usageCount : 0,
+    lastUsedAt: new Date(updated.lastUsedAt ?? updated.updatedAt ?? Date.now()).toISOString(),
+  };
+}
+
+function loadSearchScoreWeights() {
+  const defaults = {
+    intent: 0.45,
+    tags: 0.25,
+    confidence: 0.20,
+    recency: 0.10,
+  } as const;
+
+  const configured = {
+    intent: parseWeight(process.env.SEARCH_SCORE_WEIGHT_INTENT, defaults.intent),
+    tags: parseWeight(process.env.SEARCH_SCORE_WEIGHT_TAGS, defaults.tags),
+    confidence: parseWeight(process.env.SEARCH_SCORE_WEIGHT_CONFIDENCE, defaults.confidence),
+    recency: parseWeight(process.env.SEARCH_SCORE_WEIGHT_RECENCY, defaults.recency),
+  };
+
+  const total =
+    configured.intent +
+    configured.tags +
+    configured.confidence +
+    configured.recency;
+
+  if (total <= 0) return defaults;
+
+  return {
+    intent: configured.intent / total,
+    tags: configured.tags / total,
+    confidence: configured.confidence / total,
+    recency: configured.recency / total,
+  };
+}
+
+function parseWeight(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }

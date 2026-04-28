@@ -34,6 +34,15 @@ const EmbeddingCacheSchema = new Schema(
       google: [Number],
       local: [Number],
     },
+    providersUsed: {
+      type: [String],
+      default: [],
+    },
+    attemptedProviders: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     accessCount: {
       type: Number,
       default: 0,
@@ -62,6 +71,8 @@ export interface EmbeddingCacheDoc extends Document {
     google?: number[];
     local?: number[];
   };
+  providersUsed: string[];
+  attemptedProviders: number;
   accessCount: number;
   createdAt: Date;
   updatedAt: Date;

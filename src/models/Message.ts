@@ -44,6 +44,17 @@ const MessageSchema = new Schema(
     },
 
     // Metadata
+    agentId: {
+      type: String,
+      default: "anonymous"
+    },
+    usageCount: {
+      type: Number,
+      default: 0
+    },
+    lastUsedAt: {
+      type: Date
+    },
     source: {
       type: String,
       default: "api"
@@ -81,6 +92,9 @@ export interface MessageDoc extends Document {
     providersUsed: string[];
     degraded: boolean;
   };
+  agentId: string;
+  usageCount: number;
+  lastUsedAt?: Date;
   source: string;
   version: string;
   createdAt: Date;

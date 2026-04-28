@@ -21,6 +21,7 @@ export class OpenAIProvider implements EmbeddingProvider {
 
   private client: OpenAI | null = null;
   private readonly model: string;
+  private disabledReason: string | null = null;
 
   constructor(model = "text-embedding-3-small") {
     this.model = model;
@@ -51,18 +52,23 @@ export class OpenAIProvider implements EmbeddingProvider {
         latencyMs: Date.now() - start,
       };
     } catch (err: any) {
+      const error = err?.message ?? String(err);
+      if (isFatalOpenAIError(error)) {
+        this.disabledReason = error;
+      }
       return {
         provider: this.name,
         vector: [],
         dimension: 0,
         latencyMs: Date.now() - start,
-        error: err?.message ?? String(err),
+        error,
       };
     }
   }
 
   async isAvailable(): Promise<boolean> {
     try {
+      if (this.disabledReason) return false;
       if (!process.env.OPENAI_API_KEY) return false;
       this.getClient();
       return true;
@@ -70,4 +76,13 @@ export class OpenAIProvider implements EmbeddingProvider {
       return false;
     }
   }
+}
+
+function isFatalOpenAIError(error: string): boolean {
+  return (
+    error.includes("Incorrect API key") ||
+    error.includes("invalid_api_key") ||
+    error.includes("401") ||
+    error.includes("model_not_found")
+  );
 }

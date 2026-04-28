@@ -1,10 +1,11 @@
 /*
  * Integration Test: Semantic Space — Cluster Search & Centroid Evolution
- * Requires: INTEGRATION_TESTS=true, MongoDB, OPENAI_API_KEY, GOOGLE_API_KEY
+ * Requires: INTEGRATION_TESTS=true, MongoDB, and at least one provider API key
  *
  * Quick lookup: rg -n "CID:sem-space-test-" test/integration/semantic-space-intents.test.ts
  */
 
+import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import mongoose from "mongoose";
 import { SemanticSpace } from "../../src/core/sdg/semantic-space";
@@ -15,8 +16,7 @@ import { loadSeedData } from "../../src/core/seed-loader";
 const INTEGRATION = process.env.INTEGRATION_TESTS === "true";
 const PROVIDER_INTEGRATION =
   INTEGRATION &&
-  Boolean(process.env.OPENAI_API_KEY) &&
-  Boolean(process.env.GOOGLE_API_KEY);
+  (Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.GOOGLE_API_KEY));
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/agentnet_test";
 
 describe.skipIf(!PROVIDER_INTEGRATION)("Semantic Space — Integration", () => {

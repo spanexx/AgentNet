@@ -42,6 +42,17 @@ export function createServer(): Express {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Home route
+  app.get("/", (req, res) => {
+    res.json({
+      name: "AgentNet",
+      version: "0.1.0",
+      description: "Flexible protocol-based platform for AI agent intelligence sharing",
+      status: "running",
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // 404 handler
   app.use((req, res) => {
     res.status(404).json({ error: "not found" });
@@ -63,6 +74,7 @@ export function startServer(
       console.log(`✓ AgentNet running on http://localhost:${port}`);
       console.log(`  POST /api/message`);
       console.log(`  GET  /api/messages`);
+      console.log(`  GET  /api/search`);
       console.log(`  GET  /health`);
       resolve({ port, app });
     });

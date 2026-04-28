@@ -59,8 +59,12 @@ export class EmbeddingEnsemble {
     const allResults = await this.runProviders(text);
     const successful = allResults.filter((r) => r.vector.length > 0);
     const failed = allResults.filter((r) => r.error);
+    const attemptedProviders = successful.length + failed.length;
 
     if (successful.length === 0) {
+      if (attemptedProviders === 0) {
+        throw new Error("No embedding providers are configured or currently available");
+      }
       throw new Error(
         `All embedding providers failed: ${failed.map((r) => `${r.provider}: ${r.error}`).join("; ")}`
       );
@@ -83,8 +87,8 @@ export class EmbeddingEnsemble {
     // Compute weighted average vector (projected to OpenAI dimension for consistency)
     const vector = this.computeWeightedVector(successful, weights);
 
-    // Confidence: agreement average * provider coverage ratio
-    const coverage = successful.length / 3;
+    // Confidence: agreement average * attempted provider coverage ratio
+    const coverage = this.calculateCoverage(successful.length, attemptedProviders);
     const confidence = Math.min(agreement.average * coverage, 1.0);
 
     const result: EnsembleResult = {
@@ -99,18 +103,20 @@ export class EmbeddingEnsemble {
     };
 
     // Store in persistent cache (fire-and-forget)
-    this.storeCache(textHash, text, successful).catch(() => {
+    this.storeCache(textHash, text, successful, attemptedProviders).catch(() => {
       // Cache write failure is non-critical
     });
 
     return result;
   }
 
-  /** Run all providers in parallel, collecting results (errors become failed results) */
+  /** Run available providers in parallel, collecting results (errors become failed results) */
   private async runProviders(text: string): Promise<EmbeddingResult[]> {
     const entries = Array.from(this.providers.entries());
     const promises = entries.map(async ([name, provider]) => {
       try {
+        const available = await provider.isAvailable();
+        if (!available) return null;
         return await provider.embed(text);
       } catch (err: any) {
         return {
@@ -123,7 +129,8 @@ export class EmbeddingEnsemble {
       }
     });
 
-    return Promise.all(promises);
+    const results = await Promise.all(promises);
+    return results.filter((result): result is EmbeddingResult => result !== null);
   }
 
   /**
@@ -195,7 +202,15 @@ export class EmbeddingEnsemble {
         ? redistributeWeights(providersUsed)
         : calculateAdaptiveWeights(agreement);
     const vector = this.computeWeightedVector(results, weights);
-    const coverage = providersUsed.length / 3;
+    const cachedSuccessful =
+      Array.isArray(doc.providersUsed) && doc.providersUsed.length > 0
+        ? doc.providersUsed.length
+        : providersUsed.length;
+    const cachedAttempted =
+      typeof doc.attemptedProviders === "number" && doc.attemptedProviders > 0
+        ? doc.attemptedProviders
+        : cachedSuccessful;
+    const coverage = this.calculateCoverage(cachedSuccessful, cachedAttempted);
     const confidence = Math.min(agreement.average * coverage, 1.0);
 
     return {
@@ -210,16 +225,24 @@ export class EmbeddingEnsemble {
     };
   }
 
+  private calculateCoverage(successfulCount: number, attemptedCount: number): number {
+    if (attemptedCount === 0) return 0;
+    return successfulCount / attemptedCount;
+  }
+
   /** Store successful embedding results in cache */
   private async storeCache(
     textHash: string,
     originalText: string,
-    results: EmbeddingResult[]
+    results: EmbeddingResult[],
+    attemptedProviders: number
   ): Promise<void> {
     const embeddings: Record<string, number[]> = {};
+    const providersUsed: ProviderName[] = [];
     for (const r of results) {
       if (r.vector.length > 0) {
         embeddings[r.provider] = r.vector;
+        providersUsed.push(r.provider);
       }
     }
 
@@ -230,6 +253,8 @@ export class EmbeddingEnsemble {
           textHash,
           originalText,
           embeddings,
+          providersUsed,
+          attemptedProviders,
           confidence: 0, // Will be updated by normalize flow
           accessCount: 0,
           lastAccessedAt: new Date(),

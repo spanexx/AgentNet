@@ -1,10 +1,11 @@
 /*
  * Integration Test: Multi-Provider Embedding Coordination
- * Requires: INTEGRATION_TESTS=true, MongoDB, OPENAI_API_KEY, GOOGLE_API_KEY
+ * Requires: INTEGRATION_TESTS=true, MongoDB, and at least one provider API key
  *
  * Quick lookup: rg -n "CID:emb-test-" test/integration/embeddings.test.ts
  */
 
+import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import mongoose from "mongoose";
 import { EmbeddingEnsemble } from "../../src/core/embeddings/ensemble";
@@ -14,8 +15,7 @@ import { PROVIDER_DIMENSIONS } from "../../src/core/embeddings/types";
 const INTEGRATION = process.env.INTEGRATION_TESTS === "true";
 const PROVIDER_INTEGRATION =
   INTEGRATION &&
-  Boolean(process.env.OPENAI_API_KEY) &&
-  Boolean(process.env.GOOGLE_API_KEY);
+  (Boolean(process.env.OPENAI_API_KEY) || Boolean(process.env.GOOGLE_API_KEY));
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/agentnet_test";
 
 describe.skipIf(!PROVIDER_INTEGRATION)("Embedding Ensemble — Integration", () => {
@@ -30,7 +30,7 @@ describe.skipIf(!PROVIDER_INTEGRATION)("Embedding Ensemble — Integration", () 
     await mongoose.disconnect();
   });
 
-  it("generates embeddings from all 3 providers with correct dimensions", async () => {
+  it("generates embeddings from configured providers with correct dimensions", async () => {
     const result = await ensemble.embed("Find me user john");
 
     expect(result.vector.length).toBeGreaterThan(0);

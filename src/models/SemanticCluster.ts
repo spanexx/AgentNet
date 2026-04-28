@@ -23,7 +23,6 @@ const SemanticClusterSchema = new Schema(
     label: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     /** Cluster type — intent clusters and tag clusters coexist in the same space */
@@ -68,7 +67,7 @@ const SemanticClusterSchema = new Schema(
   {
     timestamps: true,
     indexes: [
-      { label: 1 },
+      { label: 1, kind: 1, unique: true },
       { kind: 1 },
       { source: 1 },
       { frequency: -1 },

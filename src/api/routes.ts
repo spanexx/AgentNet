@@ -12,7 +12,12 @@
  */
 
 import express from "express";
-import { createMessage, getMessages } from "./controllers/messageController";
+import {
+  createMessage,
+  getMessages,
+  search,
+  useMessage,
+} from "./controllers/messageController";
 
 const router = express.Router();
 
@@ -21,12 +26,15 @@ const router = express.Router();
 // Uses: createMessage controller
 // Used by: Express app
 router.post("/message", createMessage);
+router.post("/message/:id/use", useMessage);
 
 // CID:routes-002 - GET /messages
 // Purpose: Route message retrieval requests to controller
 // Uses: getMessages controller
 // Used by: Express app
 router.get("/messages", getMessages);
+
+router.get("/search", search);
 
 // CID:routes-003 - setupRoutes
 // Purpose: Export configured router for app consumption

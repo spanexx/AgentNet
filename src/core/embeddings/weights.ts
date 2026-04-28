@@ -61,6 +61,10 @@ export function computeAgreement(results: EmbeddingResult[]): AgreementScore {
     if (r.vector.length > 0) byProvider.set(r.provider, r.vector);
   }
 
+  if (byProvider.size === 1) {
+    return { pairwise, average: 1, regime: "high" };
+  }
+
   const sims: number[] = [];
   for (const [a, b] of pairs) {
     const va = byProvider.get(a);
