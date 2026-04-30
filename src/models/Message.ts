@@ -12,6 +12,7 @@
  */
 
 import mongoose, { Schema, Document } from "mongoose";
+import { SolutionOutcomeStatus } from "../types/protocol";
 
 // CID:message-001 - MessageSchema
 // Purpose: Define MongoDB schema to persist raw and normalized agent messages
@@ -41,6 +42,38 @@ const MessageSchema = new Schema(
       constraints: Schema.Types.Mixed,
       providersUsed: [String],
       degraded: Boolean,
+    },
+
+    solution: {
+      problem: {
+        type: String,
+      },
+      approach: {
+        type: String,
+      },
+      variant: {
+        type: String,
+      },
+      outcome: {
+        status: {
+          type: String,
+          enum: ["pending", "validated", "reused", "failed"] satisfies SolutionOutcomeStatus[],
+        },
+        summary: {
+          type: String,
+        },
+        metrics: {
+          type: Schema.Types.Mixed,
+        },
+        evidence: {
+          type: Schema.Types.Mixed,
+        },
+      },
+    },
+    solutionId: {
+      type: Schema.Types.ObjectId,
+      ref: "Solution",
+      index: true,
     },
 
     // Metadata
@@ -92,6 +125,18 @@ export interface MessageDoc extends Document {
     providersUsed: string[];
     degraded: boolean;
   };
+  solution?: {
+    problem?: string;
+    approach?: string;
+    variant?: string;
+    outcome?: {
+      status?: SolutionOutcomeStatus;
+      summary?: string;
+      metrics?: Record<string, number>;
+      evidence?: Record<string, unknown>;
+    };
+  };
+  solutionId?: mongoose.Types.ObjectId;
   agentId: string;
   usageCount: number;
   lastUsedAt?: Date;

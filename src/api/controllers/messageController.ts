@@ -16,8 +16,10 @@ import { Request, Response } from "express";
 import {
   storeMessage,
   getAllMessages,
+  getAllSolutions,
   searchMessages,
   markMessageUsed,
+  updateMessageOutcome,
 } from "../services/messageService";
 
 // CID:msg-ctrl-001 - createMessage
@@ -49,6 +51,7 @@ export async function createMessage(req: Request, res: Response) {
           constraints: result.normalized.constraints,
           providers_used: result.normalized.providersUsed,
         },
+        solution: result.solution,
         timestamp: result.timestamp,
       },
     };
@@ -119,9 +122,43 @@ export async function search(req: Request, res: Response) {
   }
 }
 
+export async function getSolutions(req: Request, res: Response) {
+  try {
+    const { agentId, limit, skip } = req.query;
+
+    const result = await getAllSolutions({
+      agentId: agentId ? String(agentId) : undefined,
+      limit: limit ? parseInt(String(limit)) : 100,
+      skip: skip ? parseInt(String(skip)) : 0,
+    });
+
+    res.json({
+      count: result.solutions.length,
+      total: result.total,
+      limit: result.limit,
+      skip: result.skip,
+      data: result.solutions,
+    });
+  } catch (err) {
+    handleErrors(err, res);
+  }
+}
+
 export async function useMessage(req: Request, res: Response) {
   try {
     const result = await markMessageUsed(req.params.id);
+    res.json({
+      status: "success",
+      data: result,
+    });
+  } catch (err) {
+    handleErrors(err, res);
+  }
+}
+
+export async function updateOutcome(req: Request, res: Response) {
+  try {
+    const result = await updateMessageOutcome(req.params.id, req.body);
     res.json({
       status: "success",
       data: result,
@@ -145,6 +182,16 @@ function handleErrors(err: unknown, res: Response): void {
   }
 
   if (error.message.includes("must be")) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+
+  if (error.message.startsWith("solution")) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+
+  if (error.message.startsWith("outcome update")) {
     res.status(400).json({ error: error.message });
     return;
   }

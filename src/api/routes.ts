@@ -15,8 +15,10 @@ import express from "express";
 import {
   createMessage,
   getMessages,
+  getSolutions,
   search,
   useMessage,
+  updateOutcome,
 } from "./controllers/messageController";
 
 const router = express.Router();
@@ -27,12 +29,14 @@ const router = express.Router();
 // Used by: Express app
 router.post("/message", createMessage);
 router.post("/message/:id/use", useMessage);
+router.post("/message/:id/outcome", updateOutcome);
 
 // CID:routes-002 - GET /messages
 // Purpose: Route message retrieval requests to controller
 // Uses: getMessages controller
 // Used by: Express app
 router.get("/messages", getMessages);
+router.get("/solutions", getSolutions);
 
 router.get("/search", search);
 

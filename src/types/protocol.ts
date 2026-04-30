@@ -10,6 +10,22 @@
  * Quick lookup: rg -n "CID:protocol-" src/types/protocol.ts
  */
 
+export type SolutionOutcomeStatus = "pending" | "validated" | "reused" | "failed";
+
+export type SolutionOutcome = {
+  status: SolutionOutcomeStatus;
+  summary: string;
+  metrics?: Record<string, number>;
+  evidence?: Record<string, unknown>;
+};
+
+export type SolutionRecord = {
+  problem: string;
+  approach: string;
+  variant: string;
+  outcome: SolutionOutcome;
+};
+
 // CID:protocol-001 - AgentMessage
 // Purpose: Define flexible message schema for agent intake
 // Uses: Record (TypeScript builtin)
@@ -20,6 +36,12 @@ export type AgentMessage = {
   intent?: string;
   data?: Record<string, any>;
   extra?: Record<string, any>;
+  solution?: {
+    problem?: string;
+    approach?: string;
+    variant?: string;
+    outcome?: Partial<SolutionOutcome>;
+  };
 };
 
 // CID:protocol-002 - MessageType
