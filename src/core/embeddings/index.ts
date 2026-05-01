@@ -21,6 +21,7 @@ export {
 export { OpenAIProvider } from "./providers/openai-provider";
 export { GoogleProvider } from "./providers/google-provider";
 export { LocalProvider } from "./providers/local-provider";
+export { OllamaProvider } from "./providers/ollama-provider";
 
 export {
   cosineSimilarity,

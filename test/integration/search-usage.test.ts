@@ -495,4 +495,69 @@ describe.skipIf(!INTEGRATION)("Search Usage Tracking — Integration", () => {
     expect(result.results[0]?.id).toBe(String(validated._id));
     expect(result.results[1]?.id).toBe(String(failed._id));
   });
+
+  it("applies an agent reputation multiplier during search ranking", async () => {
+    const createdAt = new Date("2026-04-01T00:00:00.000Z");
+
+    const trusted = await storeMessage({
+      agentId: "trusted-agent",
+      text: "build a dashboard",
+      solution: {
+        problem: "Dashboard pattern",
+        approach: "Modular widget dashboard",
+        variant: "Angular widgets",
+        outcome: {
+          status: "reused",
+          summary: "Reused successfully",
+          metrics: { successful_adoptions: 4 },
+        },
+      },
+    });
+
+    const risky = await storeMessage({
+      agentId: "risky-agent",
+      text: "build a dashboard",
+      solution: {
+        problem: "Dashboard pattern",
+        approach: "Monolithic page",
+        variant: "Single component",
+        outcome: {
+          status: "failed",
+          summary: "Failed under load",
+        },
+      },
+    });
+
+    await MessageModel.findByIdAndUpdate(trusted.id, { $set: { createdAt, updatedAt: createdAt } });
+    await MessageModel.findByIdAndUpdate(risky.id, { $set: { createdAt, updatedAt: createdAt } });
+    await SolutionModel.findByIdAndUpdate(trusted.solutionId, { $set: { createdAt, updatedAt: createdAt } });
+    await SolutionModel.findByIdAndUpdate(risky.solutionId, { $set: { createdAt, updatedAt: createdAt } });
+
+    const result = await searchMessages({ limit: 10 });
+    const trustedMatch = result.results.find((item) => item.id === trusted.id);
+    const riskyMatch = result.results.find((item) => item.id === risky.id);
+
+    expect(trustedMatch).toBeDefined();
+    expect(riskyMatch).toBeDefined();
+    expect((trustedMatch?.reputation.multiplier ?? 0) > (riskyMatch?.reputation.multiplier ?? 0)).toBe(true);
+    expect(result.results[0]?.id).toBe(trusted.id);
+  }, 15000);
+
+  it("keeps anonymous agents neutral in ranking multiplier output", async () => {
+    const stored = await storeMessage({
+      text: "anonymous dashboard query",
+      solution: {
+        problem: "Anonymous dashboard pattern",
+        approach: "Template dashboard",
+        variant: "Default",
+      },
+    });
+
+    const result = await searchMessages({ limit: 10 });
+    const match = result.results.find((item) => item.id === stored.id);
+
+    expect(match?.agentId).toBe("anonymous");
+    expect(match?.reputation.score).toBe(0.5);
+    expect(match?.reputation.multiplier).toBe(1);
+  }, 15000);
 });

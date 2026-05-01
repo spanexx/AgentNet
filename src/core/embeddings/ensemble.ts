@@ -17,7 +17,7 @@ import {
 } from "./types";
 import { OpenAIProvider } from "./providers/openai-provider";
 import { GoogleProvider } from "./providers/google-provider";
-import { LocalProvider } from "./providers/local-provider";
+import { OllamaProvider } from "./providers/ollama-provider";
 import {
   computeAgreement,
   calculateAdaptiveWeights,
@@ -40,7 +40,7 @@ export class EmbeddingEnsemble {
 
     const openai = providers?.openai ?? new OpenAIProvider();
     const google = providers?.google ?? new GoogleProvider();
-    const local = providers?.local ?? new LocalProvider();
+    const local = providers?.local ?? new OllamaProvider();
 
     this.providers.set("openai", openai);
     this.providers.set("google", google);

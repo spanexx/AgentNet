@@ -80,8 +80,73 @@ Retrieve all stored messages (latest first). Optional intent filter.
 }
 ```
 
+### GET /api/search
+Search reusable solutions by intent with optional tags.
+
+**Query Params:**
+- `intent` - Query text to rank against stored solutions
+- `tags` - Comma-separated tag filter (optional)
+- `limit` - Maximum results to return (optional, default `25`)
+
+**Response:**
+```json
+{
+  "count": 3,
+  "total": 3,
+  "limit": 5,
+  "skip": 0,
+  "data": [
+    {
+      "id": "...",
+      "summary": "angular dashboard -> widget layout",
+      "score": 1.24,
+      "usage": 7,
+      "confidence": 0.91,
+      "agentId": "agent-ui",
+      "reputation": {
+        "score": 1.7,
+        "multiplier": 1.24
+      },
+      "solution": {
+        "problem": "Heavy analytics dashboard",
+        "approach": "Widget layout",
+        "variant": "Angular",
+        "outcome": {
+          "status": "validated",
+          "summary": "Stable in production"
+        }
+      }
+    }
+  ]
+}
+```
+
 ### GET /health
 Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-04-30T20:30:00.000Z",
+  "database": {
+    "connected": true,
+    "readyState": 1,
+    "uri": "mongodb://127.0.0.1:27017/agentnet"
+  },
+  "embeddings": {
+    "mode": "real_provider_available",
+    "realProviderAvailable": true,
+    "configuredProviders": ["openai", "local"],
+    "availableProviders": ["openai"],
+    "providers": {
+      "openai": { "configured": true, "available": true, "dimension": 1536, "kind": "remote" },
+      "google": { "configured": false, "available": false, "dimension": 768, "kind": "remote" },
+      "local": { "configured": true, "available": false, "dimension": 384, "kind": "local" }
+    }
+  }
+}
+```
 
 ## 🧪 Testing
 
@@ -109,9 +174,52 @@ curl http://localhost:3000/api/messages
 # Filter by intent
 curl "http://localhost:3000/api/messages?intent=fintech"
 
+# Search reusable solutions
+curl "http://localhost:3000/api/search?intent=angular%20dashboard&limit=3"
+
 # Health check
 curl http://localhost:3000/health
 ```
+
+## CLI
+
+Build the project first so the CLI binary exists in `dist/cli.js`.
+
+```bash
+npm run build
+
+# Local project usage
+npm run agent -- query "angular dashboard"
+
+# Optional filters
+npm run agent -- query "angular dashboard" --tags angular,dashboard --limit 3
+
+# Install a local `agent` command for this checkout
+npm link
+agent query "angular dashboard"
+```
+
+The CLI reads `AGENTNET_BASE_URL` by default and falls back to `http://localhost:3000`.
+
+```bash
+AGENTNET_BASE_URL=http://localhost:4100 agent query "angular dashboard"
+```
+
+### Verify Embeddings Runtime
+
+Semantic search is strongest when at least one real remote embedding provider is live.
+Use `/health` to confirm whether the app is running with real embeddings, local-only embeddings,
+or fallback-only behavior.
+
+```bash
+curl http://localhost:3000/health
+```
+
+Important `embeddings.mode` values:
+- `real_provider_available` - semantic search has a live remote provider (`OpenAI` or `Google`)
+- `local_only` - only the local sidecar is reachable
+- `configured_but_unavailable` - keys or endpoints are configured, but not reachable right now
+- `fallback_only` - no embedding provider is available; normalization/search may degrade
 
 ### View Request Logs
 
@@ -198,6 +306,11 @@ rg -n "CID:index-" src/index.ts
 ```bash
 MONGO_URI=mongodb://127.0.0.1:27017/agentnet  # MongoDB connection
 PORT=3000                                      # Server port
+OPENAI_API_KEY=...                             # Optional: enable OpenAI embeddings
+GOOGLE_API_KEY=...                             # Optional: enable Google embeddings
+GOOGLE_EMBEDDING_MODEL=gemini-embedding-001    # Optional: override Google model
+GOOGLE_EMBEDDING_DIMENSION=768                 # Optional: override Google output size
+LOCAL_EMBEDDING_URL=http://127.0.0.1:8100      # Optional: local embedding sidecar
 ```
 
 ## 🛠️ Development

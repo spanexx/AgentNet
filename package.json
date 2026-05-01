@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "description": "Flexible protocol-based platform for AI agent intelligence sharing",
   "main": "dist/index.js",
+  "bin": {
+    "agent": "./dist/cli.js"
+  },
   "scripts": {
-    "dev": "ts-node-dev src/index.ts",
+    "dev": "ts-node-dev src/index.ts > server.log 2>&1",
     "build": "tsc",
     "start": "node dist/index.js",
+    "agent": "node dist/cli.js",
+    "benchmark:embeddings": "node scripts/benchmark-embeddings.mjs",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",

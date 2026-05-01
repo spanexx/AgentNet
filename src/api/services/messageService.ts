@@ -16,6 +16,8 @@ import mongoose from "mongoose";
 import { MessageModel } from "../../models/Message";
 import { SolutionModel } from "../../models/Solution";
 import { normalizeMessage, NormalizedMessage } from "../../core/normalize";
+import { clearSemanticQueryCache } from "../../core/semantic-query-cache";
+import { clearSemanticSearchResultCache } from "../../core/semantic-search-result-cache";
 import {
   AgentMessage,
   SolutionOutcome,
@@ -49,12 +51,25 @@ export async function storeMessage(raw: Record<string, unknown>): Promise<StoreM
   // Normalize to structured form (async: uses embedding ensemble)
   const normalized = await normalizeMessage(msg);
   const solution = buildSolutionRecord(msg, normalized);
+  if (!Array.isArray(normalized.vector) || normalized.vector.length === 0) {
+    throw new Error("Invalid embedding vector");
+  }
+  // Extract top intent and tags from normalization for solution-level indexing
+  const topHypothesis = Array.isArray(normalized.hypotheses) ? normalized.hypotheses[0] : undefined;
+  const solutionIntent = typeof topHypothesis?.intent === "string" ? topHypothesis.intent : "general";
+  const solutionTags = Array.isArray(topHypothesis?.tags)
+    ? topHypothesis.tags.filter((t): t is string => typeof t === "string")
+    : [];
+
   const { persistedSolution, saved } = await runInTransaction(async (session) => {
     const [createdSolution] = await SolutionModel.create(
       [
         {
           ...solution,
           agentId: msg.agentId ?? "anonymous",
+          embedding: normalized.vector ?? [],
+          intent: solutionIntent,
+          tags: solutionTags,
         },
       ],
       { session }
@@ -93,6 +108,7 @@ export async function storeMessage(raw: Record<string, unknown>): Promise<StoreM
 
   // Surface the ensemble's runtime degradation signal without penalizing unconfigured providers.
   const degraded = normalized.degraded;
+  invalidateSemanticCaches({ clearQuery: true });
 
   return {
     id: saved._id.toString(),
@@ -228,6 +244,10 @@ export type SearchResultItem = {
   confidence: number;
   agentId: string;
   createdAt: string;
+  reputation: {
+    score: number;
+    multiplier: number;
+  };
   solution: SolutionRecord;
 };
 
@@ -318,6 +338,20 @@ interface SolutionLean {
   updatedAt?: Date | string;
 }
 
+interface AgentReputationStats {
+  solutionCount: number;
+  validatedCount: number;
+  reusedCount: number;
+  failedCount: number;
+  reuseCount: number;
+}
+
+export interface AgentReputation {
+  score: number;
+  multiplier: number;
+  stats: AgentReputationStats;
+}
+
 export function buildSearchSummary(
   message: Pick<MessageLean, "original" | "solution">
 ): string {
@@ -359,6 +393,12 @@ export async function searchMessages(options?: {
     .skip(skip)
     .lean<MessageLean[]>();
 
+  const reputationByAgent = await getAgentReputationMap(
+    [...new Set(
+      messages.map((message) => (typeof message.agentId === "string" ? message.agentId : "anonymous"))
+    )]
+  );
+
   const now = Date.now();
   const scored: SearchResultItem[] = messages.map((m) => {
     const solution = hydrateSolutionRecord(m);
@@ -367,6 +407,8 @@ export async function searchMessages(options?: {
     const topTags = Array.isArray(top?.tags) ? top.tags.filter((t): t is string => typeof t === "string") : [];
     const confidence = typeof top?.confidence?.value === "number" ? top.confidence.value : 0;
     const usage = typeof m.usageCount === "number" ? m.usageCount : 0;
+    const agentId = typeof m.agentId === "string" ? m.agentId : "anonymous";
+    const reputation = reputationByAgent.get(agentId) ?? buildAgentReputation();
 
     const intentScore = intent ? (topIntent === intent ? 1 : 0) : 0.5;
     const overlappingTags = topTags.filter((t: string) => tags.includes(t)).length;
@@ -378,13 +420,14 @@ export async function searchMessages(options?: {
     const reuseScore = buildReuseScore(usage, solution.outcome.metrics);
     const outcomeScore = buildOutcomeScore(solution.outcome);
 
-    const score =
+    const baseScore =
       SEARCH_SCORE_WEIGHTS.intent * intentScore +
       SEARCH_SCORE_WEIGHTS.tags * tagOverlap +
       SEARCH_SCORE_WEIGHTS.confidence * confidence +
       SEARCH_SCORE_WEIGHTS.recency * recency +
       SEARCH_SCORE_WEIGHTS.reuse * reuseScore +
       SEARCH_SCORE_WEIGHTS.outcome * outcomeScore;
+    const score = baseScore * reputation.multiplier;
 
     const summary = buildSearchSummary(m);
 
@@ -396,8 +439,12 @@ export async function searchMessages(options?: {
       intent: topIntent,
       tags: topTags,
       confidence,
-      agentId: typeof m.agentId === "string" ? m.agentId : "anonymous",
+      agentId,
       createdAt: new Date(m.createdAt).toISOString(),
+      reputation: {
+        score: reputation.score,
+        multiplier: reputation.multiplier,
+      },
       solution,
     };
   });
@@ -450,6 +497,8 @@ export async function markMessageUsed(id: string): Promise<UseMessageResult> {
 
     return updatedMessage;
   });
+
+  invalidateSemanticCaches();
 
   return {
     id: String(updated._id),
@@ -520,12 +569,21 @@ export async function updateMessageOutcome(
     return updatedMessage;
   });
 
+  invalidateSemanticCaches();
+
   return {
     id: String(updated._id),
     solutionId: updated.solutionId ? String(updated.solutionId) : undefined,
     solution: hydrateSolutionRecord(updated),
     updatedAt: new Date(updated.updatedAt ?? Date.now()).toISOString(),
   };
+}
+
+function invalidateSemanticCaches(options?: { clearQuery?: boolean }): void {
+  clearSemanticSearchResultCache();
+  if (options?.clearQuery) {
+    clearSemanticQueryCache();
+  }
 }
 
 function loadSearchScoreWeights() {
@@ -575,6 +633,56 @@ function parseWeight(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+async function getAgentReputationMap(agentIds: string[]): Promise<Map<string, AgentReputation>> {
+  const scopedAgentIds = agentIds.filter((id) => id !== "anonymous");
+  const reputationMap = new Map<string, AgentReputation>();
+
+  if (scopedAgentIds.length === 0) {
+    return reputationMap;
+  }
+
+  const solutions = await SolutionModel.find({
+    agentId: { $in: scopedAgentIds },
+  }).lean<SolutionLean[]>();
+
+  const statsByAgent = new Map<string, AgentReputationStats>();
+
+  for (const solution of solutions) {
+    const agentId = typeof solution.agentId === "string" ? solution.agentId : "anonymous";
+    if (agentId === "anonymous") continue;
+
+    const stats = statsByAgent.get(agentId) ?? {
+      solutionCount: 0,
+      validatedCount: 0,
+      reusedCount: 0,
+      failedCount: 0,
+      reuseCount: 0,
+    };
+
+    stats.solutionCount += 1;
+
+    if (solution.outcome?.status === "validated") {
+      stats.validatedCount += 1;
+    } else if (solution.outcome?.status === "reused") {
+      stats.reusedCount += 1;
+    } else if (solution.outcome?.status === "failed") {
+      stats.failedCount += 1;
+    }
+
+    // These counters can represent the same reuse signal from different surfaces,
+    // so take the strongest available value instead of double-counting them.
+    stats.reuseCount += getSolutionReuseEvidenceCount(solution);
+
+    statsByAgent.set(agentId, stats);
+  }
+
+  for (const id of scopedAgentIds) {
+    reputationMap.set(id, buildAgentReputation(statsByAgent.get(id)));
+  }
+
+  return reputationMap;
+}
+
 async function runInTransaction<T>(
   work: (session: mongoose.ClientSession) => Promise<T>
 ): Promise<T> {
@@ -594,6 +702,61 @@ async function runInTransaction<T>(
   }
 
   return result;
+}
+
+/**
+ * Builds a normalized reputation score and ranking multiplier for an agent.
+ *
+ * The score is derived from solution outcomes and reuse evidence, then clamped
+ * to a stable range so search ranking stays predictable.
+ */
+export function buildAgentReputation(stats?: Partial<AgentReputationStats>): AgentReputation {
+  const normalizedStats: AgentReputationStats = {
+    solutionCount: Math.max(0, stats?.solutionCount ?? 0),
+    validatedCount: Math.max(0, stats?.validatedCount ?? 0),
+    reusedCount: Math.max(0, stats?.reusedCount ?? 0),
+    failedCount: Math.max(0, stats?.failedCount ?? 0),
+    reuseCount: Math.max(0, stats?.reuseCount ?? 0),
+  };
+
+  if (normalizedStats.solutionCount === 0) {
+    return {
+      score: 0.5,
+      multiplier: 1,
+      stats: normalizedStats,
+    };
+  }
+
+  // Transparent formula:
+  // - validated outcomes add 1 point
+  // - reused outcomes add 2 points
+  // - failed outcomes subtract 1 point
+  // - every recorded reuse adds a small 0.1 point bonus
+  const rawScore =
+    (
+      normalizedStats.validatedCount +
+      normalizedStats.reusedCount * 2 +
+      normalizedStats.reuseCount * 0.1 -
+      normalizedStats.failedCount
+    ) / normalizedStats.solutionCount;
+  const score = clamp(rawScore, 0, 2);
+  const multiplier = clamp(0.9 + score * 0.2, 0.9, 1.3);
+
+  return {
+    score,
+    multiplier,
+    stats: normalizedStats,
+  };
+}
+
+function getSolutionReuseEvidenceCount(solution: SolutionLean): number {
+  return Math.max(
+    0,
+    typeof solution.usageCount === "number" ? solution.usageCount : 0,
+    getMetricNumber(solution.outcome?.metrics, "successful_adoptions"),
+    getMetricNumber(solution.outcome?.metrics, "reuse_count"),
+    getMetricNumber(solution.outcome?.metrics, "reused_count")
+  );
 }
 
 function buildReuseScore(
@@ -635,6 +798,13 @@ function getMetricNumber(
   if (!metrics) return 0;
   const value = metrics[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * Clamp a numeric value into an inclusive min/max range.
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 export function buildSolutionRecord(

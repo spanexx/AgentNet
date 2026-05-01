@@ -12,6 +12,8 @@
 
 import express, { Express } from "express";
 import routes from "./api/routes";
+import { getEmbeddingRuntimeStatus } from "./core/embedding-runtime";
+import { getConnectionStatus } from "./core/db";
 import { createRequestLogger } from "./utils/requestLogger";
 
 // CID:server-001 - createServer
@@ -38,8 +40,26 @@ export function createServer(): Express {
   app.use("/api", routes);
 
   // Health check endpoint
-  app.get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  app.get("/health", async (req, res) => {
+    try {
+      const [database, embeddings] = await Promise.all([
+        Promise.resolve(getConnectionStatus()),
+        getEmbeddingRuntimeStatus(),
+      ]);
+
+      res.json({
+        status: database.connected ? "ok" : "degraded",
+        timestamp: new Date().toISOString(),
+        database,
+        embeddings,
+      });
+    } catch (error) {
+      console.error("[health] failed to build runtime status", error);
+      res.status(500).json({
+        status: "error",
+        timestamp: new Date().toISOString(),
+      });
+    }
   });
 
   // Home route
@@ -75,6 +95,7 @@ export function startServer(
       console.log(`  POST /api/message`);
       console.log(`  GET  /api/messages`);
       console.log(`  GET  /api/search`);
+      console.log(`  GET  /api/semantic-search`);
       console.log(`  GET  /health`);
       resolve({ port, app });
     });

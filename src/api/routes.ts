@@ -20,6 +20,7 @@ import {
   useMessage,
   updateOutcome,
 } from "./controllers/messageController";
+import { semanticSearch } from "./controllers/semanticSearchController";
 
 const router = express.Router();
 
@@ -39,6 +40,7 @@ router.get("/messages", getMessages);
 router.get("/solutions", getSolutions);
 
 router.get("/search", search);
+router.get("/semantic-search", semanticSearch);
 
 // CID:routes-003 - setupRoutes
 // Purpose: Export configured router for app consumption

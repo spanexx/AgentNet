@@ -125,5 +125,5 @@ export const WEIGHT_PRESETS: Record<string, WeightProfile> = {
 export const PROVIDER_DIMENSIONS: Record<ProviderName, number> = {
   openai: 1536,
   google: 768,
-  local: 384,
+  local: 1024,
 };

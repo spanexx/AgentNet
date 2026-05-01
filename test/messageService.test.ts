@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as normalizeModule from "../src/core/normalize";
 import {
+  buildAgentReputation,
   buildSearchSummary,
   buildSolutionRecord,
   storeMessage,
@@ -98,6 +100,10 @@ describe("buildSolutionRecord", () => {
 });
 
 describe("storeMessage validation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("rejects malformed solution payloads before persistence", async () => {
     await expect(
       storeMessage({
@@ -132,6 +138,35 @@ describe("storeMessage validation", () => {
         },
       } as unknown as Record<string, unknown>)
     ).rejects.toThrow("solution.outcome.status must be a valid status");
+  });
+
+  it("rejects empty embedding vectors before persistence", async () => {
+    vi.spyOn(normalizeModule, "normalizeMessage").mockResolvedValue({
+      hypotheses: [
+        {
+          intent: "frontend_dashboard",
+          tags: ["angular"],
+          confidence: {
+            value: 0.8,
+            density: 0.5,
+            agreement: 1,
+            distance: 0.1,
+          },
+          source: "seed",
+        },
+      ],
+      constraints: {},
+      providersUsed: [],
+      degraded: true,
+      vector: [],
+    });
+
+    await expect(
+      storeMessage({
+        type: "INTENT_REQUEST",
+        intent: "show dashboard",
+      })
+    ).rejects.toThrow("Invalid embedding vector");
   });
 });
 
@@ -199,5 +234,40 @@ describe("buildSearchSummary", () => {
     });
 
     expect(summary).toBe("Search latency -> Precomputed index");
+  });
+});
+
+describe("buildAgentReputation", () => {
+  it("returns a neutral multiplier when an agent has no solution history", () => {
+    const reputation = buildAgentReputation();
+
+    expect(reputation.score).toBe(0.5);
+    expect(reputation.multiplier).toBe(1);
+  });
+
+  it("rewards validated and reused outcomes with reuse evidence", () => {
+    const reputation = buildAgentReputation({
+      solutionCount: 2,
+      validatedCount: 1,
+      reusedCount: 1,
+      failedCount: 0,
+      reuseCount: 4,
+    });
+
+    expect(reputation.score).toBe(1.7);
+    expect(reputation.multiplier).toBe(1.24);
+  });
+
+  it("demotes agents with repeated failed outcomes", () => {
+    const reputation = buildAgentReputation({
+      solutionCount: 2,
+      validatedCount: 0,
+      reusedCount: 0,
+      failedCount: 2,
+      reuseCount: 0,
+    });
+
+    expect(reputation.score).toBe(0);
+    expect(reputation.multiplier).toBe(0.9);
   });
 });

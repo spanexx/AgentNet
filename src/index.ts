@@ -9,6 +9,7 @@
  */
 
 import { config } from "dotenv";
+import { getEmbeddingRuntimeStatus } from "./core/embedding-runtime";
 import { connectDB } from "./core/db";
 import { loadSeedData } from "./core/seed-loader";
 import { createServer, startServer } from "./server";
@@ -29,6 +30,15 @@ async function bootstrap() {
 
     // Load YAML seed catalogs (intents + tags) into MongoDB
     await loadSeedData();
+
+    const embeddingStatus = await getEmbeddingRuntimeStatus();
+    console.log(`[embeddings] mode=${embeddingStatus.mode}`);
+    console.log(
+      `[embeddings] configured=${embeddingStatus.configuredProviders.join(",") || "none"}`
+    );
+    console.log(
+      `[embeddings] available=${embeddingStatus.availableProviders.join(",") || "none"}`
+    );
 
     // Create and start HTTP server
     const app = createServer();
